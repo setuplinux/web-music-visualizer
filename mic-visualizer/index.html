@@ -62,7 +62,7 @@
         right: 14px;
         z-index: 3;
         display: grid;
-        grid-template-columns: minmax(150px, 0.7fr) minmax(150px, 0.8fr) minmax(250px, 1.5fr) auto auto auto auto auto auto auto minmax(96px, 0.42fr);
+        grid-template-columns: minmax(150px, 0.7fr) minmax(150px, 0.8fr) minmax(250px, 1.5fr) auto auto auto auto auto auto auto auto minmax(96px, 0.42fr);
         gap: 8px;
         align-items: center;
         padding: 9px;
@@ -71,6 +71,16 @@
         background: var(--panel);
         box-shadow: 0 18px 55px rgba(0, 0, 0, 0.34);
         backdrop-filter: blur(18px);
+        transition:
+          opacity 220ms ease,
+          transform 220ms ease;
+      }
+
+      .topbar.idle-hidden {
+        opacity: 0;
+        transform: translateY(-14px);
+        pointer-events: none;
+        visibility: hidden;
       }
 
       .brand {
@@ -396,6 +406,10 @@
           overflow: auto;
         }
 
+        .topbar.idle-hidden {
+          transform: translateY(calc(-100% - 16px));
+        }
+
         select,
         input,
         button {
@@ -430,6 +444,7 @@
         #randomPreset,
         #nextPreset,
         #editButton,
+        #hideMenuButton,
         #likePresetButton,
         #likedOnlyButton {
           padding: 0 6px;
@@ -462,6 +477,7 @@
       <button id="likePresetButton" type="button" title="Keep this preset">Keep</button>
       <button id="likedOnlyButton" type="button" title="Show kept presets only" data-active="false">Liked</button>
       <button id="editButton" type="button" title="Edit preset settings" aria-expanded="false">Edit</button>
+      <button id="hideMenuButton" type="button" title="Hide controls">Hide</button>
       <button id="micButton" type="button" title="Start or retry microphone">Start Mic</button>
       <button id="systemButton" type="button" title="Capture tab or system audio">System Audio</button>
       <div class="meter" aria-label="Microphone level">
@@ -556,6 +572,7 @@
     <script src="assets/vendor/butterchurnPresetsExtra.min.js"></script>
     <script>
       const canvas = document.getElementById("visualizer");
+      const topbar = document.querySelector(".topbar");
       const presetSelect = document.getElementById("presetSelect");
       const presetSearch = document.getElementById("presetSearch");
       const micStatus = document.getElementById("micStatus");
@@ -573,6 +590,7 @@
       const likePresetButton = document.getElementById("likePresetButton");
       const likedOnlyButton = document.getElementById("likedOnlyButton");
       const editButton = document.getElementById("editButton");
+      const hideMenuButton = document.getElementById("hideMenuButton");
       const editorPanel = document.getElementById("editorPanel");
       const closeEditor = document.getElementById("closeEditor");
       const editorPresetName = document.getElementById("editorPresetName");
@@ -617,6 +635,10 @@
       let micStarting = false;
       let currentIndex = 0;
       let toastTimer;
+      let menuIdleTimer;
+      let lastMenuActivityAt = Date.now();
+      const menuIdleMs = 3000;
+      const canHoverMenu = window.matchMedia("(hover: hover) and (pointer: fine)");
 
       const presetSources = [presetPack, extraPresetPack].filter((pack) => pack?.getPresets);
       const originalPresets = Object.assign({}, ...presetSources.map((pack) => pack.getPresets()));
@@ -624,6 +646,34 @@
       const savedPresets = JSON.parse(localStorage.getItem("micVisualizerPresets") || "{}");
       Object.assign(presets, savedPresets);
       const presetNames = Object.keys(presets).sort((a, b) => a.localeCompare(b));
+      const originalPresetNumbers = {
+        "_Aderrasi - Wanderer in Curved Space - mash0000 - faclempt kibitzing meshuggana schmaltz (Geiss color mix)": 1,
+        "_Eo.S. - glowsticks v2 02 - Geiss HPF": 2,
+        "_Geiss - untitled": 7,
+        "_Mig_085": 14,
+        "$$$ Royal - Mashup (177)": 18,
+        "$$$ Royal - Mashup (197)": 19,
+        "$$$ Royal - Mashup (307)": 22,
+        "$$$ Royal - Mashup (326)": 23,
+        "$$$ Royal - Mashup (431)": 24,
+        "$$$ Royal - Mashup (441)": 25,
+        "An AdamFX n Martin Infusion 2 flexi - Why The Sky Looks Diffrent Today - AdamFx n Martin Infusion - Tack Tile Disfunction B": 35,
+        "DemonLD_-_Toxic_water_diffusion threx angela vs debi brown (nice)": 45,
+        "Eo.S. - glowsticks v2 03 music": 46,
+        "Eo.S. + Zylot - skylight (Stained Glass Majesty mix)": 50,
+        "Flexi - infused with the spiral": 67,
+        "flexi - jelly fish mandala": 70,
+        "Flexi - piercing": 76,
+        "flexi + geiss - pogo cubes vs. tokamak vs. game of life [stahls jelly 4.5 finish]": 94,
+        "Geiss - Reaction Diffusion 2": 117,
+        "Geiss - Skin Dots Multi-layer 3": 120,
+        "Martin - acid wiring": 135,
+        "martin - cope - laser dome": 148,
+        "Martin - QBikal - Surface Turbulence IIb": 172,
+        "martin - witchcraft reloaded": 179,
+        "Rovastar - Explosive Minds": 200,
+        "yin - 250 - Artificial poles of the continuum_Phat′s_Orbit_mix": 239,
+      };
       let visiblePresetNames = [...presetNames];
       const savedLikedPresets = JSON.parse(localStorage.getItem("micVisualizerLikedPresets") || "[]");
       const likedPresetNames = new Set(savedLikedPresets.filter((name) => presets[name]));
@@ -639,7 +689,7 @@
       }
 
       function presetNumber(name) {
-        return presetNames.indexOf(name) + 1;
+        return originalPresetNumbers[name] || presetNames.indexOf(name) + 1;
       }
 
       function presetLabel(name) {
@@ -774,6 +824,44 @@
         toast.classList.add("visible");
         window.clearTimeout(toastTimer);
         toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 2200);
+      }
+
+      function isEditingPreset() {
+        return editorPanel.classList.contains("open");
+      }
+
+      function canUseMouseActivity(event) {
+        if (event?.type === "mousemove" && !canHoverMenu.matches) {
+          return false;
+        }
+        return !event?.pointerType || event.pointerType === "mouse" || event.pointerType === "pen";
+      }
+
+      function hideMenuNow() {
+        if (isEditingPreset()) return;
+        lastMenuActivityAt = 0;
+        topbar.classList.add("idle-hidden");
+      }
+
+      function updateMenuIdleState() {
+        if (isEditingPreset()) {
+          topbar.classList.remove("idle-hidden");
+          return;
+        }
+        const idleFor = Date.now() - lastMenuActivityAt;
+        topbar.classList.toggle("idle-hidden", idleFor >= menuIdleMs);
+      }
+
+      function showMenuForActivity(event) {
+        if (!canUseMouseActivity(event)) return;
+        lastMenuActivityAt = Date.now();
+        topbar.classList.remove("idle-hidden");
+      }
+
+      function startMenuIdleWatcher() {
+        window.clearInterval(menuIdleTimer);
+        menuIdleTimer = window.setInterval(updateMenuIdleState, 250);
+        updateMenuIdleState();
       }
 
       function setStatus(message) {
@@ -1166,11 +1254,14 @@
         editorPanel.classList.toggle("open", open);
         editButton.setAttribute("aria-expanded", String(open));
         if (open) syncEditorFromPreset();
+        showMenuForActivity();
       });
       closeEditor.addEventListener("click", () => {
         editorPanel.classList.remove("open");
         editButton.setAttribute("aria-expanded", "false");
+        showMenuForActivity();
       });
+      hideMenuButton.addEventListener("click", hideMenuNow);
       settingsTab.addEventListener("click", () => {
         settingsTab.setAttribute("aria-selected", "true");
         codeTab.setAttribute("aria-selected", "false");
@@ -1235,7 +1326,12 @@
         }
       });
       window.addEventListener("resize", resize);
+      window.addEventListener("pointermove", showMenuForActivity);
+      window.addEventListener("mousemove", showMenuForActivity);
+      window.addEventListener("touchstart", () => showMenuForActivity(), { passive: true });
+      window.addEventListener("touchmove", () => showMenuForActivity(), { passive: true });
       window.addEventListener("pointerdown", () => {
+        showMenuForActivity();
         if (!audioStream && permissionPanel.classList.contains("visible")) startMic();
       });
       window.addEventListener("keydown", (event) => {
@@ -1246,6 +1342,8 @@
       });
 
       boot();
+      showMenuForActivity();
+      startMenuIdleWatcher();
     </script>
   </body>
 </html>
