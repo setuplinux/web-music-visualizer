@@ -16,3 +16,14 @@ test('manual preset changes restart the playlist timer instead of disabling it',
   assert.match(html, /function loadRandomPreset\(\)/);
   assert.match(html, /randomPreset\.addEventListener\("click", \(\) => \{[\s\S]*?loadRandomPreset\(\);[\s\S]*?restartPlaylistAutoAdvance\(\);[\s\S]*?\}\);/);
 });
+
+test('does not show keep or liked preset buttons', () => {
+  assert.doesNotMatch(html, /id="likePresetButton"/);
+  assert.doesNotMatch(html, /id="likedOnlyButton"/);
+  assert.doesNotMatch(html, />Keep<|>Kept<|>Liked</);
+});
+
+test('excludes preset 002 from the selectable preset list', () => {
+  assert.match(html, /excludedPresetNames/);
+  assert.doesNotMatch(html, /"_Eo\.S\. - glowsticks v2 02 - Geiss HPF": 2/);
+});

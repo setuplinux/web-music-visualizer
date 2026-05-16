@@ -1,6 +1,6 @@
 # Mic Visualizer
 
-A browser-based audio visualizer using Butterchurn MilkDrop presets. It can use microphone input or browser system/tab capture, and it includes preset search, numbering, liked presets, and a live edit panel.
+A browser-based audio visualizer using Butterchurn MilkDrop presets. It can use microphone input or browser system/tab capture, and it includes preset search, numbering, and a live edit panel.
 
 Run from the project root:
 

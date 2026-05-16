@@ -1,6 +1,6 @@
 # Web Music Visualizer
 
-A browser-based MilkDrop-style music visualizer built with Butterchurn. It can react to a microphone or to system/tab audio, includes preset search, preset numbering, liked presets, and an editor panel for sensitivity and preset-code experiments.
+A browser-based MilkDrop-style music visualizer built with Butterchurn. It can react to a microphone or to system/tab audio, includes preset search, preset numbering, and an editor panel for sensitivity and preset-code experiments.
 
 ## Live app
 
@@ -14,7 +14,7 @@ https://setuplinux.github.io/web-music-visualizer/
 2. Choose a preset from the numbered preset picker or search by name/number.
 3. Click **Mic** for microphone input, or **System Audio** to visualize audio from a tab, screen, or app.
 4. For system audio, choose a source and enable the browser's **Share audio** option when it appears.
-5. Use **Edit** to adjust sensitivity, smoothing, blend behavior, and preset code. Saved edits and liked presets stay in your browser.
+5. Use **Edit** to adjust sensitivity, smoothing, blend behavior, and preset code. Saved edits stay in your browser.
 
 ## Run locally
 

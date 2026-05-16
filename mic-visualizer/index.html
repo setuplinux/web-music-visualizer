@@ -62,7 +62,7 @@
         right: 14px;
         z-index: 3;
         display: grid;
-        grid-template-columns: minmax(150px, 0.7fr) minmax(150px, 0.8fr) minmax(250px, 1.5fr) auto auto auto auto auto auto auto auto auto minmax(96px, 0.42fr);
+        grid-template-columns: minmax(150px, 0.7fr) minmax(150px, 0.8fr) minmax(250px, 1.5fr) auto auto auto auto auto auto auto minmax(96px, 0.42fr);
         gap: 8px;
         align-items: center;
         padding: 9px;
@@ -186,11 +186,6 @@
         background: rgba(255, 204, 102, 0.13);
       }
 
-      #likedOnlyButton[data-active="true"],
-      #likePresetButton[data-active="true"] {
-        border-color: rgba(112, 255, 159, 0.58);
-        background: rgba(112, 255, 159, 0.13);
-      }
 
       .meter-fill {
         width: 0%;
@@ -444,9 +439,7 @@
         #randomPreset,
         #nextPreset,
         #editButton,
-        #hideMenuButton,
-        #likePresetButton,
-        #likedOnlyButton {
+        #hideMenuButton {
           padding: 0 6px;
         }
 
@@ -475,8 +468,6 @@
       <button id="randomPreset" type="button" title="Random preset">Random</button>
       <button id="nextPreset" type="button" title="Next preset">Next</button>
       <button id="playlistToggle" type="button" title="Pause automatic random playlist" data-active="true">Pause</button>
-      <button id="likePresetButton" type="button" title="Keep this preset">Keep</button>
-      <button id="likedOnlyButton" type="button" title="Show kept presets only" data-active="false">Liked</button>
       <button id="editButton" type="button" title="Edit preset settings" aria-expanded="false">Edit</button>
       <button id="hideMenuButton" type="button" title="Hide controls">Hide</button>
       <button id="micButton" type="button" title="Start or retry microphone">Start Mic</button>
@@ -589,8 +580,6 @@
       const nextPreset = document.getElementById("nextPreset");
       const randomPreset = document.getElementById("randomPreset");
       const playlistToggle = document.getElementById("playlistToggle");
-      const likePresetButton = document.getElementById("likePresetButton");
-      const likedOnlyButton = document.getElementById("likedOnlyButton");
       const editButton = document.getElementById("editButton");
       const hideMenuButton = document.getElementById("hideMenuButton");
       const editorPanel = document.getElementById("editorPanel");
@@ -646,14 +635,18 @@
       const canHoverMenu = window.matchMedia("(hover: hover) and (pointer: fine)");
 
       const presetSources = [presetPack, extraPresetPack].filter((pack) => pack?.getPresets);
-      const originalPresets = Object.assign({}, ...presetSources.map((pack) => pack.getPresets()));
-      const presets = Object.assign({}, originalPresets);
+      const excludedPresetNames = new Set(["_Eo.S. - glowsticks v2 02 - Geiss HPF"]);
+      const originalPresets = Object.fromEntries(
+        Object.entries(Object.assign({}, ...presetSources.map((pack) => pack.getPresets()))).filter(
+          ([name]) => !excludedPresetNames.has(name),
+        ),
+      );
       const savedPresets = JSON.parse(localStorage.getItem("micVisualizerPresets") || "{}");
-      Object.assign(presets, savedPresets);
+      for (const name of excludedPresetNames) delete savedPresets[name];
+      const presets = Object.assign({}, originalPresets, savedPresets);
       const presetNames = Object.keys(presets).sort((a, b) => a.localeCompare(b));
       const originalPresetNumbers = {
         "_Aderrasi - Wanderer in Curved Space - mash0000 - faclempt kibitzing meshuggana schmaltz (Geiss color mix)": 1,
-        "_Eo.S. - glowsticks v2 02 - Geiss HPF": 2,
         "_Geiss - untitled": 7,
         "_Mig_085": 14,
         "$$$ Royal - Mashup (177)": 18,
@@ -680,15 +673,6 @@
         "yin - 250 - Artificial poles of the continuum_Phat′s_Orbit_mix": 239,
       };
       let visiblePresetNames = [...presetNames];
-      const savedLikedPresets = JSON.parse(localStorage.getItem("micVisualizerLikedPresets") || "[]");
-      const likedPresetNames = new Set(savedLikedPresets.filter((name) => presets[name]));
-      if (!likedPresetNames.size) {
-        for (const name of presetNames) {
-          if (name.toLowerCase().includes("glowsticks")) likedPresetNames.add(name);
-        }
-      }
-      let likedOnly = false;
-
       function clonePreset(preset) {
         return JSON.parse(JSON.stringify(preset));
       }
@@ -699,20 +683,7 @@
 
       function presetLabel(name) {
         const number = String(presetNumber(name)).padStart(3, "0");
-        const kept = likedPresetNames.has(name) ? " *" : "";
-        return `#${number}${kept} ${name}`;
-      }
-
-      function saveLikedPresets() {
-        localStorage.setItem("micVisualizerLikedPresets", JSON.stringify([...likedPresetNames]));
-      }
-
-      function updateLikeButtons() {
-        const kept = likedPresetNames.has(activePresetName);
-        likePresetButton.dataset.active = String(kept);
-        likePresetButton.textContent = kept ? "Kept" : "Keep";
-        likedOnlyButton.dataset.active = String(likedOnly);
-        likedOnlyButton.textContent = likedOnly ? "All" : "Liked";
+        return `#${number} ${name}`;
       }
 
       function matchesPresetSearch(name, query) {
@@ -730,10 +701,7 @@
 
       function refreshVisiblePresets({ keepSelection = true } = {}) {
         const query = presetSearch.value.trim();
-        visiblePresetNames = presetNames.filter((name) => {
-          if (likedOnly && !likedPresetNames.has(name)) return false;
-          return matchesPresetSearch(name, query);
-        });
+        visiblePresetNames = presetNames.filter((name) => matchesPresetSearch(name, query));
         populatePresets();
         if (keepSelection && activePresetName && visiblePresetNames.includes(activePresetName)) {
           presetSelect.value = activePresetName;
@@ -742,7 +710,6 @@
           currentIndex = 0;
           presetSelect.value = visiblePresetNames[0];
         }
-        updateLikeButtons();
       }
 
       function formatPreset(preset) {
@@ -1022,7 +989,6 @@
         activePreset = clonePreset(presets[name]);
         visualizer.loadPreset(activePreset, blend);
         syncEditorFromPreset();
-        updateLikeButtons();
         showToast(name);
       }
 
@@ -1299,23 +1265,6 @@
         restartPlaylistAutoAdvance();
       });
       playlistToggle.addEventListener("click", togglePlaylist);
-      likePresetButton.addEventListener("click", () => {
-        if (!activePresetName) return;
-        if (likedPresetNames.has(activePresetName)) {
-          likedPresetNames.delete(activePresetName);
-          showToast("Removed from liked presets");
-        } else {
-          likedPresetNames.add(activePresetName);
-          showToast("Kept preset");
-        }
-        saveLikedPresets();
-        refreshVisiblePresets();
-      });
-      likedOnlyButton.addEventListener("click", () => {
-        likedOnly = !likedOnly;
-        refreshVisiblePresets();
-        showToast(likedOnly ? "Showing liked presets" : "Showing all presets");
-      });
       editButton.addEventListener("click", () => {
         const open = !editorPanel.classList.contains("open");
         editorPanel.classList.toggle("open", open);
