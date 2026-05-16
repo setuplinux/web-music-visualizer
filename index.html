@@ -62,7 +62,7 @@
         right: 14px;
         z-index: 3;
         display: grid;
-        grid-template-columns: minmax(150px, 0.7fr) minmax(150px, 0.8fr) minmax(250px, 1.5fr) auto auto auto auto auto auto auto auto minmax(96px, 0.42fr);
+        grid-template-columns: minmax(150px, 0.7fr) minmax(150px, 0.8fr) minmax(250px, 1.5fr) auto auto auto auto auto auto auto auto auto minmax(96px, 0.42fr);
         gap: 8px;
         align-items: center;
         padding: 9px;
@@ -474,6 +474,7 @@
       <button id="prevPreset" type="button" title="Previous preset">Prev</button>
       <button id="randomPreset" type="button" title="Random preset">Random</button>
       <button id="nextPreset" type="button" title="Next preset">Next</button>
+      <button id="playlistToggle" type="button" title="Pause automatic random playlist" data-active="true">Pause</button>
       <button id="likePresetButton" type="button" title="Keep this preset">Keep</button>
       <button id="likedOnlyButton" type="button" title="Show kept presets only" data-active="false">Liked</button>
       <button id="editButton" type="button" title="Edit preset settings" aria-expanded="false">Edit</button>
@@ -587,6 +588,7 @@
       const prevPreset = document.getElementById("prevPreset");
       const nextPreset = document.getElementById("nextPreset");
       const randomPreset = document.getElementById("randomPreset");
+      const playlistToggle = document.getElementById("playlistToggle");
       const likePresetButton = document.getElementById("likePresetButton");
       const likedOnlyButton = document.getElementById("likedOnlyButton");
       const editButton = document.getElementById("editButton");
@@ -636,8 +638,11 @@
       let currentIndex = 0;
       let toastTimer;
       let menuIdleTimer;
+      let playlistTimer;
+      let playlistPaused = false;
       let lastMenuActivityAt = Date.now();
       const menuIdleMs = 3000;
+      const playlistIntervalMs = 10000;
       const canHoverMenu = window.matchMedia("(hover: hover) and (pointer: fine)");
 
       const presetSources = [presetPack, extraPresetPack].filter((pack) => pack?.getPresets);
@@ -1021,6 +1026,53 @@
         showToast(name);
       }
 
+      function loadRandomPreset() {
+        if (!visiblePresetNames.length) return;
+        if (visiblePresetNames.length === 1) {
+          loadPreset(0, presetBlendSeconds);
+          return;
+        }
+        let nextIndex = currentIndex;
+        while (nextIndex === currentIndex) {
+          nextIndex = Math.floor(Math.random() * visiblePresetNames.length);
+        }
+        loadPreset(nextIndex, presetBlendSeconds);
+      }
+
+      function advancePlaylistRandomly() {
+        if (playlistPaused || isEditingPreset()) return;
+        loadRandomPreset();
+      }
+
+      function startPlaylistAutoAdvance() {
+        window.clearInterval(playlistTimer);
+        if (!playlistPaused) {
+          playlistTimer = window.setInterval(advancePlaylistRandomly, playlistIntervalMs);
+        }
+      }
+
+      function restartPlaylistAutoAdvance() {
+        if (!playlistPaused) startPlaylistAutoAdvance();
+      }
+
+      function updatePlaylistToggle() {
+        playlistToggle.dataset.active = String(!playlistPaused);
+        playlistToggle.textContent = playlistPaused ? "Play" : "Pause";
+        playlistToggle.title = playlistPaused ? "Resume automatic random playlist" : "Pause automatic random playlist";
+      }
+
+      function togglePlaylist() {
+        playlistPaused = !playlistPaused;
+        updatePlaylistToggle();
+        if (playlistPaused) {
+          window.clearInterval(playlistTimer);
+          showToast("Playlist paused");
+        } else {
+          startPlaylistAutoAdvance();
+          showToast("Playlist playing");
+        }
+      }
+
       async function startMic({ force = false } = {}) {
         if (force && micStarting) {
           micStarting = false;
@@ -1214,24 +1266,39 @@
         resize();
         currentIndex = pickInitialPreset();
         loadPreset(currentIndex, 0);
+        startPlaylistAutoAdvance();
         render();
         startMic();
       }
 
       presetSelect.addEventListener("change", () => {
         const nextIndex = visiblePresetNames.indexOf(presetSelect.value);
-        if (nextIndex >= 0) loadPreset(nextIndex, presetBlendSeconds);
+        if (nextIndex >= 0) {
+          loadPreset(nextIndex, presetBlendSeconds);
+          restartPlaylistAutoAdvance();
+        }
       });
       presetSearch.addEventListener("input", () => refreshVisiblePresets());
       presetSearch.addEventListener("keydown", (event) => {
         if (event.key === "Enter" && visiblePresetNames.length) {
           loadPreset(visiblePresetNames.indexOf(presetSelect.value), presetBlendSeconds);
+          restartPlaylistAutoAdvance();
         }
       });
 
-      prevPreset.addEventListener("click", () => loadPreset(currentIndex - 1));
-      nextPreset.addEventListener("click", () => loadPreset(currentIndex + 1));
-      randomPreset.addEventListener("click", () => loadPreset(Math.floor(Math.random() * visiblePresetNames.length)));
+      prevPreset.addEventListener("click", () => {
+        loadPreset(currentIndex - 1);
+        restartPlaylistAutoAdvance();
+      });
+      nextPreset.addEventListener("click", () => {
+        loadPreset(currentIndex + 1);
+        restartPlaylistAutoAdvance();
+      });
+      randomPreset.addEventListener("click", () => {
+        loadRandomPreset();
+        restartPlaylistAutoAdvance();
+      });
+      playlistToggle.addEventListener("click", togglePlaylist);
       likePresetButton.addEventListener("click", () => {
         if (!activePresetName) return;
         if (likedPresetNames.has(activePresetName)) {
@@ -1337,12 +1404,14 @@
       window.addEventListener("keydown", (event) => {
         if (event.key === "ArrowLeft") loadPreset(currentIndex - 1);
         if (event.key === "ArrowRight") loadPreset(currentIndex + 1);
-        if (event.key.toLowerCase() === "r") loadPreset(Math.floor(Math.random() * visiblePresetNames.length));
+        if (event.key.toLowerCase() === "r") loadRandomPreset();
+        if (["ArrowLeft", "ArrowRight", "r", "R"].includes(event.key)) restartPlaylistAutoAdvance();
         if (!audioStream && permissionPanel.classList.contains("visible")) startMic();
       });
 
       boot();
       showMenuForActivity();
+      updatePlaylistToggle();
       startMenuIdleWatcher();
     </script>
   </body>
