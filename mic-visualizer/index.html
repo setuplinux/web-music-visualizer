@@ -1,0 +1,1251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mic Visualizer</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --panel: rgba(8, 10, 14, 0.7);
+        --panel-strong: rgba(8, 10, 14, 0.9);
+        --line: rgba(255, 255, 255, 0.18);
+        --text: #f5f7fb;
+        --muted: #aeb8c8;
+        --hot: #71f6ff;
+        --warm: #ffcc66;
+        --good: #70ff9f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #05070b;
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      body::before {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        content: "";
+        background:
+          radial-gradient(circle at 18% 14%, rgba(113, 246, 255, 0.12), transparent 24rem),
+          radial-gradient(circle at 80% 4%, rgba(255, 204, 102, 0.1), transparent 28rem),
+          linear-gradient(180deg, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.55));
+        z-index: 1;
+      }
+
+      #visualizer {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+        background: #030407;
+      }
+
+      .topbar {
+        position: fixed;
+        top: 14px;
+        left: 14px;
+        right: 14px;
+        z-index: 3;
+        display: grid;
+        grid-template-columns: minmax(150px, 0.7fr) minmax(150px, 0.8fr) minmax(250px, 1.5fr) auto auto auto auto auto auto auto minmax(96px, 0.42fr);
+        gap: 8px;
+        align-items: center;
+        padding: 9px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: 0 18px 55px rgba(0, 0, 0, 0.34);
+        backdrop-filter: blur(18px);
+      }
+
+      .brand {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 0 4px;
+      }
+
+      .brand strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+        letter-spacing: 0;
+      }
+
+      .brand span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      select,
+      input,
+      button {
+        height: 36px;
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+        outline: none;
+      }
+
+      select {
+        width: 100%;
+        padding: 0 34px 0 11px;
+      }
+
+      #presetSearch {
+        width: 100%;
+        padding: 0 11px;
+      }
+
+      option {
+        background: #11141c;
+        color: var(--text);
+      }
+
+      button {
+        min-width: 40px;
+        padding: 0 12px;
+        cursor: pointer;
+        transition:
+          transform 140ms ease,
+          background 140ms ease,
+          border-color 140ms ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(113, 246, 255, 0.45);
+        background: rgba(113, 246, 255, 0.13);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      .meter {
+        position: relative;
+        height: 36px;
+        min-width: 110px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.07);
+      }
+
+      #micButton[data-state="active"] {
+        border-color: rgba(112, 255, 159, 0.55);
+        background: rgba(112, 255, 159, 0.12);
+      }
+
+      #micButton[data-state="error"] {
+        border-color: rgba(255, 204, 102, 0.65);
+        background: rgba(255, 204, 102, 0.12);
+      }
+
+      #systemButton[data-state="active"] {
+        border-color: rgba(113, 246, 255, 0.55);
+        background: rgba(113, 246, 255, 0.13);
+      }
+
+      #editButton[aria-expanded="true"] {
+        border-color: rgba(255, 204, 102, 0.65);
+        background: rgba(255, 204, 102, 0.13);
+      }
+
+      #likedOnlyButton[data-active="true"],
+      #likePresetButton[data-active="true"] {
+        border-color: rgba(112, 255, 159, 0.58);
+        background: rgba(112, 255, 159, 0.13);
+      }
+
+      .meter-fill {
+        width: 0%;
+        height: 100%;
+        background: linear-gradient(90deg, var(--hot), var(--good), var(--warm));
+        box-shadow: 0 0 24px rgba(113, 246, 255, 0.35);
+        transition: width 80ms linear;
+      }
+
+      .meter-label {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 11px;
+        pointer-events: none;
+        text-transform: uppercase;
+      }
+
+      .permission {
+        position: fixed;
+        inset: 0;
+        z-index: 2;
+        display: none;
+        place-items: center;
+        padding: 24px;
+        background: rgba(0, 0, 0, 0.18);
+      }
+
+      .permission.visible {
+        display: grid;
+      }
+
+      .permission-card {
+        width: min(440px, calc(100vw - 32px));
+        padding: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        background: var(--panel-strong);
+        box-shadow: 0 28px 100px rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(20px);
+      }
+
+      .permission-card h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        line-height: 1.2;
+        letter-spacing: 0;
+      }
+
+      .permission-card p {
+        margin: 0 0 16px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .permission-card button {
+        width: 100%;
+        border-color: rgba(113, 246, 255, 0.5);
+        background: rgba(113, 246, 255, 0.16);
+      }
+
+      .toast {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 4;
+        max-width: min(440px, calc(100vw - 32px));
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-strong);
+        color: var(--muted);
+        font-size: 12px;
+        opacity: 0;
+        transform: translateY(8px);
+        transition:
+          opacity 180ms ease,
+          transform 180ms ease;
+        pointer-events: none;
+      }
+
+      .toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .editor {
+        position: fixed;
+        top: 72px;
+        right: 14px;
+        bottom: 14px;
+        z-index: 3;
+        width: min(440px, calc(100vw - 28px));
+        display: none;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(8, 10, 14, 0.86);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(18px);
+      }
+
+      .editor.open {
+        display: grid;
+      }
+
+      .editor-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .editor-head strong {
+        font-size: 13px;
+      }
+
+      .editor-head span {
+        display: block;
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .editor-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .editor-tab[aria-selected="true"] {
+        border-color: rgba(113, 246, 255, 0.55);
+        background: rgba(113, 246, 255, 0.13);
+      }
+
+      .editor-panel {
+        min-height: 0;
+        display: none;
+        overflow: auto;
+      }
+
+      .editor-panel.active {
+        display: block;
+      }
+
+      .control {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        padding: 9px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+      }
+
+      .control label {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .control output {
+        min-width: 52px;
+        color: var(--text);
+        font-size: 12px;
+        text-align: right;
+      }
+
+      .control input[type="range"] {
+        grid-column: 1 / -1;
+        width: 100%;
+        height: 24px;
+        accent-color: var(--hot);
+      }
+
+      .code-editor {
+        width: 100%;
+        height: 100%;
+        min-height: 360px;
+        resize: none;
+        padding: 11px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: rgba(0, 0, 0, 0.34);
+        color: #e9f4ff;
+        font: 12px/1.45 Consolas, "Cascadia Mono", monospace;
+      }
+
+      .editor-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 8px;
+      }
+
+      .editor-error {
+        min-height: 16px;
+        color: #ffcc66;
+        font-size: 12px;
+      }
+
+      @media (max-width: 820px) {
+        .topbar {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          top: 8px;
+          left: 8px;
+          right: 8px;
+          gap: 6px;
+          padding: 8px;
+          max-height: calc(100vh - 16px);
+          overflow: auto;
+        }
+
+        select,
+        input,
+        button {
+          height: 34px;
+          font-size: 12px;
+        }
+
+        .brand {
+          grid-column: 1 / -1;
+        }
+
+        #presetSearch,
+        #presetSelect {
+          grid-column: 1 / -1;
+        }
+
+        .meter {
+          grid-column: 1 / -1;
+          height: 32px;
+          min-width: 0;
+        }
+
+        #micButton {
+          grid-column: 1 / 3;
+        }
+
+        #systemButton {
+          grid-column: 3 / -1;
+        }
+
+        #prevPreset,
+        #randomPreset,
+        #nextPreset,
+        #editButton,
+        #likePresetButton,
+        #likedOnlyButton {
+          padding: 0 6px;
+        }
+
+        .editor {
+          top: 8px;
+          left: 8px;
+          right: 8px;
+          bottom: 8px;
+          width: auto;
+          z-index: 5;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="visualizer" aria-label="Live microphone music visualizer"></canvas>
+
+    <main class="topbar" aria-label="Visualizer controls">
+      <div class="brand">
+        <strong>Mic Visualizer v2</strong>
+        <span id="micStatus">Starting microphone...</span>
+      </div>
+      <input id="presetSearch" type="search" placeholder="Search name or #042" aria-label="Search presets" />
+      <select id="presetSelect" aria-label="Preset"></select>
+      <button id="prevPreset" type="button" title="Previous preset">Prev</button>
+      <button id="randomPreset" type="button" title="Random preset">Random</button>
+      <button id="nextPreset" type="button" title="Next preset">Next</button>
+      <button id="likePresetButton" type="button" title="Keep this preset">Keep</button>
+      <button id="likedOnlyButton" type="button" title="Show kept presets only" data-active="false">Liked</button>
+      <button id="editButton" type="button" title="Edit preset settings" aria-expanded="false">Edit</button>
+      <button id="micButton" type="button" title="Start or retry microphone">Start Mic</button>
+      <button id="systemButton" type="button" title="Capture tab or system audio">System Audio</button>
+      <div class="meter" aria-label="Microphone level">
+        <div id="levelFill" class="meter-fill"></div>
+        <div class="meter-label">Mic</div>
+      </div>
+    </main>
+
+    <section id="permissionPanel" class="permission" aria-live="polite">
+      <div class="permission-card">
+        <h1 id="permissionTitle">Choose audio input</h1>
+        <p id="permissionText">The visualizer is running. The browser needs microphone access before the presets can react to sound.</p>
+        <button id="enableMic" type="button">Enable microphone</button>
+      </div>
+    </section>
+
+    <aside id="editorPanel" class="editor" aria-label="Preset editor">
+      <div class="editor-head">
+        <div>
+          <strong>Preset editor</strong>
+          <span id="editorPresetName">No preset loaded</span>
+        </div>
+        <button id="closeEditor" type="button" title="Close editor">Close</button>
+      </div>
+
+      <div class="editor-tabs" role="tablist" aria-label="Edit mode">
+        <button id="settingsTab" class="editor-tab" type="button" role="tab" aria-selected="true">Settings</button>
+        <button id="codeTab" class="editor-tab" type="button" role="tab" aria-selected="false">Code</button>
+      </div>
+
+      <div id="settingsPanel" class="editor-panel active" role="tabpanel" aria-labelledby="settingsTab">
+        <div class="control">
+          <label for="sensitivityControl">Audio sensitivity</label>
+          <output id="sensitivityValue">8.00</output>
+          <input id="sensitivityControl" type="range" min="0" max="8" step="0.05" value="8" />
+        </div>
+        <div class="control">
+          <label for="smoothingControl">Analyser smoothing</label>
+          <output id="smoothingValue">0.78</output>
+          <input id="smoothingControl" type="range" min="0" max="0.98" step="0.01" value="0.78" />
+        </div>
+        <div class="control">
+          <label for="blendControl">Preset blend seconds</label>
+          <output id="blendValue">1.20</output>
+          <input id="blendControl" type="range" min="0" max="6" step="0.1" value="1.2" />
+        </div>
+        <div class="control">
+          <label for="decayControl">Decay</label>
+          <output id="decayValue">0.98</output>
+          <input id="decayControl" type="range" min="0.8" max="1" step="0.001" value="0.98" />
+        </div>
+        <div class="control">
+          <label for="zoomControl">Zoom</label>
+          <output id="zoomValue">1.00</output>
+          <input id="zoomControl" type="range" min="0.2" max="3" step="0.01" value="1" />
+        </div>
+        <div class="control">
+          <label for="warpControl">Warp</label>
+          <output id="warpValue">1.00</output>
+          <input id="warpControl" type="range" min="0" max="5" step="0.01" value="1" />
+        </div>
+        <div class="control">
+          <label for="rotControl">Rotation</label>
+          <output id="rotValue">0.00</output>
+          <input id="rotControl" type="range" min="-1" max="1" step="0.001" value="0" />
+        </div>
+        <div class="control">
+          <label for="waveScaleControl">Wave scale</label>
+          <output id="waveScaleValue">1.00</output>
+          <input id="waveScaleControl" type="range" min="0" max="5" step="0.01" value="1" />
+        </div>
+      </div>
+
+      <div id="codePanel" class="editor-panel" role="tabpanel" aria-labelledby="codeTab">
+        <textarea id="presetCode" class="code-editor" spellcheck="false"></textarea>
+      </div>
+
+      <div>
+        <div id="editorError" class="editor-error"></div>
+        <div class="editor-actions">
+          <button id="applyEditor" type="button">Apply</button>
+          <button id="saveEditor" type="button">Save</button>
+          <button id="resetEditor" type="button">Reset</button>
+        </div>
+      </div>
+    </aside>
+
+    <div id="toast" class="toast" role="status"></div>
+
+    <script src="assets/vendor/butterchurn.min.js"></script>
+    <script src="assets/vendor/butterchurnPresets.min.js"></script>
+    <script src="assets/vendor/butterchurnPresetsExtra.min.js"></script>
+    <script>
+      const canvas = document.getElementById("visualizer");
+      const presetSelect = document.getElementById("presetSelect");
+      const presetSearch = document.getElementById("presetSearch");
+      const micStatus = document.getElementById("micStatus");
+      const levelFill = document.getElementById("levelFill");
+      const permissionPanel = document.getElementById("permissionPanel");
+      const permissionTitle = document.getElementById("permissionTitle");
+      const toast = document.getElementById("toast");
+      const enableMic = document.getElementById("enableMic");
+      const micButton = document.getElementById("micButton");
+      const systemButton = document.getElementById("systemButton");
+      const permissionText = document.getElementById("permissionText");
+      const prevPreset = document.getElementById("prevPreset");
+      const nextPreset = document.getElementById("nextPreset");
+      const randomPreset = document.getElementById("randomPreset");
+      const likePresetButton = document.getElementById("likePresetButton");
+      const likedOnlyButton = document.getElementById("likedOnlyButton");
+      const editButton = document.getElementById("editButton");
+      const editorPanel = document.getElementById("editorPanel");
+      const closeEditor = document.getElementById("closeEditor");
+      const editorPresetName = document.getElementById("editorPresetName");
+      const settingsTab = document.getElementById("settingsTab");
+      const codeTab = document.getElementById("codeTab");
+      const settingsPanel = document.getElementById("settingsPanel");
+      const codePanel = document.getElementById("codePanel");
+      const presetCode = document.getElementById("presetCode");
+      const editorError = document.getElementById("editorError");
+      const applyEditor = document.getElementById("applyEditor");
+      const saveEditor = document.getElementById("saveEditor");
+      const resetEditor = document.getElementById("resetEditor");
+      const sensitivityControl = document.getElementById("sensitivityControl");
+      const smoothingControl = document.getElementById("smoothingControl");
+      const blendControl = document.getElementById("blendControl");
+
+      const baseValControls = [
+        ["decay", document.getElementById("decayControl"), document.getElementById("decayValue")],
+        ["zoom", document.getElementById("zoomControl"), document.getElementById("zoomValue")],
+        ["warp", document.getElementById("warpControl"), document.getElementById("warpValue")],
+        ["rot", document.getElementById("rotControl"), document.getElementById("rotValue")],
+        ["wave_scale", document.getElementById("waveScaleControl"), document.getElementById("waveScaleValue")],
+      ];
+
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const butter = window.butterchurn?.default || window.butterchurn;
+      const presetPack = window.butterchurnPresets?.default || window.butterchurnPresets;
+      const extraPresetPack = window.butterchurnPresetsExtra?.default || window.butterchurnPresetsExtra;
+
+      let audioContext;
+      let visualizer;
+      let analyser;
+      let analyserData;
+      let audioStream;
+      let audioSourceLabel = "microphone";
+      let inputSource;
+      let inputGain;
+      let audioSensitivity = 1;
+      let presetBlendSeconds = 1.2;
+      let activePresetName = "";
+      let activePreset = null;
+      let micStarting = false;
+      let currentIndex = 0;
+      let toastTimer;
+
+      const presetSources = [presetPack, extraPresetPack].filter((pack) => pack?.getPresets);
+      const originalPresets = Object.assign({}, ...presetSources.map((pack) => pack.getPresets()));
+      const presets = Object.assign({}, originalPresets);
+      const savedPresets = JSON.parse(localStorage.getItem("micVisualizerPresets") || "{}");
+      Object.assign(presets, savedPresets);
+      const presetNames = Object.keys(presets).sort((a, b) => a.localeCompare(b));
+      let visiblePresetNames = [...presetNames];
+      const savedLikedPresets = JSON.parse(localStorage.getItem("micVisualizerLikedPresets") || "[]");
+      const likedPresetNames = new Set(savedLikedPresets.filter((name) => presets[name]));
+      if (!likedPresetNames.size) {
+        for (const name of presetNames) {
+          if (name.toLowerCase().includes("glowsticks")) likedPresetNames.add(name);
+        }
+      }
+      let likedOnly = false;
+
+      function clonePreset(preset) {
+        return JSON.parse(JSON.stringify(preset));
+      }
+
+      function presetNumber(name) {
+        return presetNames.indexOf(name) + 1;
+      }
+
+      function presetLabel(name) {
+        const number = String(presetNumber(name)).padStart(3, "0");
+        const kept = likedPresetNames.has(name) ? " *" : "";
+        return `#${number}${kept} ${name}`;
+      }
+
+      function saveLikedPresets() {
+        localStorage.setItem("micVisualizerLikedPresets", JSON.stringify([...likedPresetNames]));
+      }
+
+      function updateLikeButtons() {
+        const kept = likedPresetNames.has(activePresetName);
+        likePresetButton.dataset.active = String(kept);
+        likePresetButton.textContent = kept ? "Kept" : "Keep";
+        likedOnlyButton.dataset.active = String(likedOnly);
+        likedOnlyButton.textContent = likedOnly ? "All" : "Liked";
+      }
+
+      function matchesPresetSearch(name, query) {
+        if (!query) return true;
+        const normalized = query.toLowerCase().replace(/^#/, "").trim();
+        const number = String(presetNumber(name));
+        const padded = number.padStart(3, "0");
+        return (
+          name.toLowerCase().includes(query.toLowerCase()) ||
+          number === normalized ||
+          padded === normalized ||
+          `#${padded}` === query.toLowerCase()
+        );
+      }
+
+      function refreshVisiblePresets({ keepSelection = true } = {}) {
+        const query = presetSearch.value.trim();
+        visiblePresetNames = presetNames.filter((name) => {
+          if (likedOnly && !likedPresetNames.has(name)) return false;
+          return matchesPresetSearch(name, query);
+        });
+        populatePresets();
+        if (keepSelection && activePresetName && visiblePresetNames.includes(activePresetName)) {
+          presetSelect.value = activePresetName;
+          currentIndex = visiblePresetNames.indexOf(activePresetName);
+        } else if (visiblePresetNames.length) {
+          currentIndex = 0;
+          presetSelect.value = visiblePresetNames[0];
+        }
+        updateLikeButtons();
+      }
+
+      function formatPreset(preset) {
+        return JSON.stringify(preset, null, 2);
+      }
+
+      function getCurrentPresetFromEditor() {
+        try {
+          editorError.textContent = "";
+          const parsed = JSON.parse(presetCode.value);
+          if (!parsed || typeof parsed !== "object" || !parsed.baseVals) {
+            throw new Error("Preset JSON needs a baseVals object.");
+          }
+          parsed.shapes ||= [];
+          parsed.waves ||= [];
+          return parsed;
+        } catch (error) {
+          editorError.textContent = error.message;
+          return null;
+        }
+      }
+
+      function updateSensitivity() {
+        audioSensitivity = Number(sensitivityControl.value);
+        document.getElementById("sensitivityValue").textContent = audioSensitivity.toFixed(2);
+        if (inputGain) inputGain.gain.value = audioSensitivity;
+      }
+
+      function updateSmoothing() {
+        const value = Number(smoothingControl.value);
+        document.getElementById("smoothingValue").textContent = value.toFixed(2);
+        if (analyser) analyser.smoothingTimeConstant = value;
+      }
+
+      function updateBlend() {
+        presetBlendSeconds = Number(blendControl.value);
+        document.getElementById("blendValue").textContent = presetBlendSeconds.toFixed(2);
+      }
+
+      function syncControlsFromPreset(preset) {
+        const baseVals = preset?.baseVals || {};
+        for (const [key, input, output] of baseValControls) {
+          if (typeof baseVals[key] === "number") {
+            input.value = String(baseVals[key]);
+          }
+          output.textContent = Number(input.value).toFixed(key === "decay" ? 3 : 2);
+        }
+      }
+
+      function syncEditorFromPreset() {
+        if (!activePresetName || !activePreset) return;
+        editorPresetName.textContent = activePresetName;
+        presetCode.value = formatPreset(activePreset);
+        syncControlsFromPreset(activePreset);
+      }
+
+      function applyEditedPreset({ save = false } = {}) {
+        const edited = getCurrentPresetFromEditor();
+        if (!edited || !activePresetName || !visualizer) return false;
+        activePreset = clonePreset(edited);
+        presets[activePresetName] = clonePreset(edited);
+        visualizer.loadPreset(activePreset, presetBlendSeconds);
+        syncControlsFromPreset(activePreset);
+        if (save) {
+          savedPresets[activePresetName] = clonePreset(activePreset);
+          localStorage.setItem("micVisualizerPresets", JSON.stringify(savedPresets));
+          showToast("Preset saved locally");
+        } else {
+          showToast("Preset applied");
+        }
+        return true;
+      }
+
+      function applyBaseValChange(key, value) {
+        if (!activePreset) return;
+        activePreset.baseVals ||= {};
+        activePreset.baseVals[key] = value;
+        presetCode.value = formatPreset(activePreset);
+        visualizer?.loadPreset(activePreset, 0.15);
+      }
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add("visible");
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 2200);
+      }
+
+      function setStatus(message) {
+        micStatus.textContent = message;
+      }
+
+      function setMicButton(state, label) {
+        micButton.dataset.state = state;
+        micButton.textContent = label;
+      }
+
+      function setSystemButton(state, label = "System Audio") {
+        systemButton.dataset.state = state;
+        systemButton.textContent = label;
+      }
+
+      function showMicHelp(message, title = "Choose audio input") {
+        permissionTitle.textContent = title;
+        permissionText.textContent = message;
+        permissionPanel.classList.add("visible");
+      }
+
+      function micErrorMessage(error) {
+        if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
+          return "Microphone is blocked for this page. If you are in the Codex in-app browser, open this URL in Chrome or Edge. Otherwise allow microphone access for 127.0.0.1 in site settings, then press Start Mic.";
+        }
+        if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") {
+          return "No microphone was found. Plug in or enable a microphone, then press Start Mic.";
+        }
+        if (error?.name === "NotReadableError" || error?.name === "TrackStartError") {
+          return "The microphone is busy in another app. Close the other app or switch devices, then press Start Mic.";
+        }
+        if (error?.name === "AbortError") {
+          return "The microphone request timed out. Check for a browser permission prompt, then press Start Mic.";
+        }
+        return error?.message || "Microphone did not start. Press Start Mic to try again.";
+      }
+
+      function systemErrorMessage(error) {
+        if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
+          return "System audio capture was canceled or blocked. Press System Audio, choose a tab or screen that is playing music, and enable Share audio.";
+        }
+        if (error?.name === "NotFoundError") {
+          return "No shareable audio source was found. Try sharing a Chrome tab that is playing music.";
+        }
+        if (error?.name === "AbortError") {
+          return "System audio capture did not start. Press System Audio again and make sure Share audio is checked.";
+        }
+        return error?.message || "System audio did not start. Press System Audio to try again.";
+      }
+
+      function withTimeout(promise, ms, message = "Microphone permission prompt did not resolve.") {
+        let timer;
+        const timeout = new Promise((_, reject) => {
+          timer = window.setTimeout(() => {
+            const error = new Error(message);
+            error.name = "AbortError";
+            reject(error);
+          }, ms);
+        });
+        return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+      }
+
+      async function resumeAudioContext(timeoutMs = 1200) {
+        if (!audioContext || audioContext.state === "running") return true;
+        try {
+          await withTimeout(audioContext.resume(), timeoutMs, "Audio engine is waiting for a click.");
+          return audioContext.state === "running";
+        } catch {
+          return false;
+        }
+      }
+
+      function stopCurrentAudio({ silent = false } = {}) {
+        if (audioStream) {
+          for (const track of audioStream.getTracks()) {
+            track.stop();
+          }
+        }
+        try {
+          inputSource?.disconnect();
+          inputGain?.disconnect();
+        } catch {}
+        audioStream = null;
+        inputSource = null;
+        inputGain = null;
+        analyser = null;
+        analyserData = null;
+        if (!silent) {
+          setStatus(`${audioSourceLabel} stopped`);
+          setMicButton("error", "Start Mic");
+          setSystemButton("idle");
+        }
+      }
+
+      function connectAudioStream(stream, sourceLabel) {
+        stopCurrentAudio({ silent: true });
+        audioStream = stream;
+        audioSourceLabel = sourceLabel;
+        inputSource = audioContext.createMediaStreamSource(stream);
+        inputGain = audioContext.createGain();
+        inputGain.gain.value = audioSensitivity;
+        inputSource.connect(inputGain);
+        visualizer.connectAudio(inputGain);
+
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = Number(smoothingControl.value);
+        inputSource.connect(analyser);
+        analyserData = new Uint8Array(analyser.fftSize);
+      }
+
+      function resize() {
+        const width = Math.max(320, window.innerWidth);
+        const height = Math.max(240, window.innerHeight);
+        canvas.width = Math.floor(width * window.devicePixelRatio);
+        canvas.height = Math.floor(height * window.devicePixelRatio);
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        visualizer?.setRendererSize(canvas.width, canvas.height);
+      }
+
+      function populatePresets() {
+        const fragment = document.createDocumentFragment();
+        for (const name of visiblePresetNames) {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = presetLabel(name);
+          fragment.appendChild(option);
+        }
+        presetSelect.replaceChildren(fragment);
+      }
+
+      function pickInitialPreset() {
+        const preferred = [
+          "Flexi, martin + geiss - dedicated to the sherwin maxawow",
+          "Rovastar - Cosmic Echoes 2",
+          "Geiss - Thumb Drum",
+          "martin - witchcraft reloaded",
+        ];
+        const match = preferred.find((needle) =>
+          presetNames.find((name) => name.toLowerCase().includes(needle.toLowerCase())),
+        );
+        return Math.max(0, visiblePresetNames.indexOf(match || visiblePresetNames[Math.floor(Math.random() * visiblePresetNames.length)]));
+      }
+
+      function loadPreset(index, blend = 1.2) {
+        if (!visiblePresetNames.length || !visualizer) return;
+        currentIndex = (index + visiblePresetNames.length) % visiblePresetNames.length;
+        const name = visiblePresetNames[currentIndex];
+        presetSelect.value = name;
+        activePresetName = name;
+        activePreset = clonePreset(presets[name]);
+        visualizer.loadPreset(activePreset, blend);
+        syncEditorFromPreset();
+        updateLikeButtons();
+        showToast(name);
+      }
+
+      async function startMic({ force = false } = {}) {
+        if (force && micStarting) {
+          micStarting = false;
+          setMicButton("error", "Retry Mic");
+        }
+        if (micStarting) return;
+        micStarting = true;
+        permissionPanel.classList.remove("visible");
+        setMicButton("starting", "Starting...");
+        if (!AudioContextClass || !navigator.mediaDevices?.getUserMedia) {
+          setStatus("Microphone not supported in this browser");
+          setMicButton("error", "Retry Mic");
+          showMicHelp("This browser does not expose microphone access to the page. Open the same URL in Chrome or Edge, then allow microphone access.");
+          micStarting = false;
+          return;
+        }
+
+        if (!audioContext) {
+          audioContext = new AudioContextClass();
+          visualizer = butter.createVisualizer(audioContext, canvas, {
+            width: canvas.width,
+            height: canvas.height,
+            pixelRatio: 1,
+            textureRatio: 1,
+          });
+          currentIndex = pickInitialPreset();
+          loadPreset(currentIndex, 0);
+        }
+
+        try {
+          const micStream = await withTimeout(
+            navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+              },
+              video: false,
+            }),
+            8000,
+          );
+
+          const tracks = micStream.getAudioTracks();
+          if (!tracks.length) {
+            throw Object.assign(new Error("No audio track came back from the browser."), {
+              name: "NotFoundError",
+            });
+          }
+
+          for (const track of tracks) {
+            track.addEventListener("ended", () => {
+              setStatus("Microphone stopped");
+              setMicButton("error", "Retry Mic");
+              setSystemButton("idle");
+              showMicHelp("The microphone stopped. Press Start Mic to reconnect.");
+            });
+          }
+
+          const audioStarted = await resumeAudioContext(1500);
+
+          connectAudioStream(micStream, "Microphone");
+
+          setStatus(audioStarted ? "Microphone active" : "Click Start Mic to wake audio");
+          setMicButton(audioStarted ? "active" : "error", audioStarted ? "Mic Active" : "Wake Audio");
+          setSystemButton("idle");
+          permissionPanel.classList.remove("visible");
+          showToast(audioStarted ? "Microphone connected" : "Microphone connected; click Wake Audio");
+        } catch (error) {
+          const message = micErrorMessage(error);
+          setStatus("Microphone not connected");
+          setMicButton("error", "Retry Mic");
+          showMicHelp(message, "Enable microphone");
+          showToast(message);
+        } finally {
+          micStarting = false;
+        }
+      }
+
+      async function stopMic() {
+        if (!audioStream) return;
+        stopCurrentAudio({ silent: true });
+        setStatus("Microphone stopped");
+        setMicButton("error", "Start Mic");
+        setSystemButton("idle");
+      }
+
+      async function startSystemAudio() {
+        permissionPanel.classList.remove("visible");
+        setSystemButton("active", "Starting...");
+        setMicButton("idle", "Start Mic");
+        if (!navigator.mediaDevices?.getDisplayMedia) {
+          setSystemButton("idle");
+          const message = "This browser cannot capture tab or system audio. Use current Chrome or Edge.";
+          setStatus("System audio unsupported");
+          showMicHelp(message, "Share system audio");
+          showToast(message);
+          return;
+        }
+
+        try {
+          if (!audioContext) {
+            audioContext = new AudioContextClass();
+          }
+          const stream = await withTimeout(
+            navigator.mediaDevices.getDisplayMedia({
+              video: true,
+              audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+                systemAudio: "include",
+              },
+            }),
+            30000,
+            "System audio selection did not finish.",
+          );
+          const tracks = stream.getAudioTracks();
+          if (!tracks.length) {
+            stream.getTracks().forEach((track) => track.stop());
+            throw Object.assign(new Error("No audio track was shared. Choose a Chrome tab or screen and enable Share audio."), {
+              name: "NotFoundError",
+            });
+          }
+          for (const videoTrack of stream.getVideoTracks()) {
+            videoTrack.stop();
+          }
+          for (const track of tracks) {
+            track.addEventListener("ended", () => {
+              stopCurrentAudio({ silent: true });
+              setStatus("System audio stopped");
+              setSystemButton("idle");
+              setMicButton("idle", "Start Mic");
+            });
+          }
+          const audioStarted = await resumeAudioContext(1500);
+          connectAudioStream(stream, "System audio");
+          setStatus(audioStarted ? "System audio active" : "Click System Audio to wake audio");
+          setSystemButton(audioStarted ? "active" : "idle", audioStarted ? "System Active" : "Wake Audio");
+          setMicButton("idle", "Start Mic");
+          showToast(audioStarted ? "System audio connected" : "System audio connected; click System Audio");
+        } catch (error) {
+          const message = systemErrorMessage(error);
+          setStatus("System audio not connected");
+          setSystemButton("idle");
+          showMicHelp(message, "Share system audio");
+          showToast(message);
+        }
+      }
+
+      function updateLevel() {
+        if (!analyser || !analyserData) {
+          levelFill.style.width = "0%";
+          return;
+        }
+        analyser.getByteTimeDomainData(analyserData);
+        let sum = 0;
+        for (const value of analyserData) {
+          const centered = (value - 128) / 128;
+          sum += centered * centered;
+        }
+        const rms = Math.sqrt(sum / analyserData.length);
+        const level = Math.min(100, Math.round(rms * 260));
+        levelFill.style.width = `${level}%`;
+      }
+
+      function render() {
+        visualizer?.render();
+        updateLevel();
+        requestAnimationFrame(render);
+      }
+
+      function boot() {
+        if (!butter || !presetSources.length || !presetNames.length) {
+          setStatus("Preset engine failed to load");
+          permissionPanel.classList.add("visible");
+          return;
+        }
+
+        populatePresets();
+        setMicButton("idle", "Start Mic");
+        updateSensitivity();
+        updateSmoothing();
+        updateBlend();
+        audioContext = new AudioContextClass();
+        visualizer = butter.createVisualizer(audioContext, canvas, {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          pixelRatio: 1,
+          textureRatio: 1,
+        });
+        resize();
+        currentIndex = pickInitialPreset();
+        loadPreset(currentIndex, 0);
+        render();
+        startMic();
+      }
+
+      presetSelect.addEventListener("change", () => {
+        const nextIndex = visiblePresetNames.indexOf(presetSelect.value);
+        if (nextIndex >= 0) loadPreset(nextIndex, presetBlendSeconds);
+      });
+      presetSearch.addEventListener("input", () => refreshVisiblePresets());
+      presetSearch.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && visiblePresetNames.length) {
+          loadPreset(visiblePresetNames.indexOf(presetSelect.value), presetBlendSeconds);
+        }
+      });
+
+      prevPreset.addEventListener("click", () => loadPreset(currentIndex - 1));
+      nextPreset.addEventListener("click", () => loadPreset(currentIndex + 1));
+      randomPreset.addEventListener("click", () => loadPreset(Math.floor(Math.random() * visiblePresetNames.length)));
+      likePresetButton.addEventListener("click", () => {
+        if (!activePresetName) return;
+        if (likedPresetNames.has(activePresetName)) {
+          likedPresetNames.delete(activePresetName);
+          showToast("Removed from liked presets");
+        } else {
+          likedPresetNames.add(activePresetName);
+          showToast("Kept preset");
+        }
+        saveLikedPresets();
+        refreshVisiblePresets();
+      });
+      likedOnlyButton.addEventListener("click", () => {
+        likedOnly = !likedOnly;
+        refreshVisiblePresets();
+        showToast(likedOnly ? "Showing liked presets" : "Showing all presets");
+      });
+      editButton.addEventListener("click", () => {
+        const open = !editorPanel.classList.contains("open");
+        editorPanel.classList.toggle("open", open);
+        editButton.setAttribute("aria-expanded", String(open));
+        if (open) syncEditorFromPreset();
+      });
+      closeEditor.addEventListener("click", () => {
+        editorPanel.classList.remove("open");
+        editButton.setAttribute("aria-expanded", "false");
+      });
+      settingsTab.addEventListener("click", () => {
+        settingsTab.setAttribute("aria-selected", "true");
+        codeTab.setAttribute("aria-selected", "false");
+        settingsPanel.classList.add("active");
+        codePanel.classList.remove("active");
+      });
+      codeTab.addEventListener("click", () => {
+        codeTab.setAttribute("aria-selected", "true");
+        settingsTab.setAttribute("aria-selected", "false");
+        codePanel.classList.add("active");
+        settingsPanel.classList.remove("active");
+      });
+      sensitivityControl.addEventListener("input", updateSensitivity);
+      smoothingControl.addEventListener("input", updateSmoothing);
+      blendControl.addEventListener("input", updateBlend);
+      for (const [key, input, output] of baseValControls) {
+        input.addEventListener("input", () => {
+          const value = Number(input.value);
+          output.textContent = value.toFixed(key === "decay" ? 3 : 2);
+          applyBaseValChange(key, value);
+        });
+      }
+      applyEditor.addEventListener("click", () => applyEditedPreset());
+      saveEditor.addEventListener("click", () => applyEditedPreset({ save: true }));
+      resetEditor.addEventListener("click", () => {
+        if (!activePresetName) return;
+        delete savedPresets[activePresetName];
+        localStorage.setItem("micVisualizerPresets", JSON.stringify(savedPresets));
+        presets[activePresetName] = clonePreset(originalPresets[activePresetName] || presets[activePresetName]);
+        activePreset = clonePreset(presets[activePresetName]);
+        visualizer.loadPreset(activePreset, presetBlendSeconds);
+        syncEditorFromPreset();
+        showToast("Preset reset");
+      });
+      enableMic.addEventListener("click", startMic);
+      micButton.addEventListener("click", () => {
+        if (audioStream && audioSourceLabel === "Microphone") {
+          if (audioContext?.state !== "running") {
+            resumeAudioContext(3000).then((started) => {
+              setStatus(started ? "Microphone active" : "Click Start Mic to wake audio");
+              setMicButton(started ? "active" : "error", started ? "Mic Active" : "Wake Audio");
+            });
+          } else {
+            stopMic();
+          }
+        } else {
+          startMic({ force: true });
+        }
+      });
+      systemButton.addEventListener("click", () => {
+        if (audioStream && audioSourceLabel === "System audio") {
+          if (audioContext?.state !== "running") {
+            resumeAudioContext(3000).then((started) => {
+              setStatus(started ? "System audio active" : "Click System Audio to wake audio");
+              setSystemButton(started ? "active" : "idle", started ? "System Active" : "Wake Audio");
+            });
+          } else {
+            stopCurrentAudio();
+          }
+        } else {
+          startSystemAudio();
+        }
+      });
+      window.addEventListener("resize", resize);
+      window.addEventListener("pointerdown", () => {
+        if (!audioStream && permissionPanel.classList.contains("visible")) startMic();
+      });
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowLeft") loadPreset(currentIndex - 1);
+        if (event.key === "ArrowRight") loadPreset(currentIndex + 1);
+        if (event.key.toLowerCase() === "r") loadPreset(Math.floor(Math.random() * visiblePresetNames.length));
+        if (!audioStream && permissionPanel.classList.contains("visible")) startMic();
+      });
+
+      boot();
+    </script>
+  </body>
+</html>

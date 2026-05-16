@@ -1,0 +1,25 @@
+node_modules/
+npm-debug.log*
+
+# Local render/video experiments and generated media.
+renders/
+.tools/
+milkdrop-test/
+assets/
+*.mp4
+*.mov
+*.wav
+*.mp3
+
+# Keep the public web app vendor bundle, but skip local render harnesses.
+!mic-visualizer/assets/
+!mic-visualizer/assets/vendor/
+!mic-visualizer/assets/vendor/*.js
+mic-visualizer/render-glowsticks.html
+mic-visualizer/assets/signal-fires.wav
+
+# OS/editor noise.
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

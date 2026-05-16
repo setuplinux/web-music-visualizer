@@ -1,0 +1,29 @@
+{
+  "name": "music-video-visualizer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:audio-data": "node scripts/build-audio-data.mjs",
+    "build:stem-data": "node scripts/build-stem-data.mjs",
+    "build:stem-plan": "node scripts/build-stem-plan.mjs",
+    "dev": "npx --yes hyperframes@0.6.12 preview",
+    "mic": "npx --yes http-server mic-visualizer -a 127.0.0.1 -p 5177 -c-1",
+    "check": "npx --yes hyperframes@0.6.12 lint && npx --yes hyperframes@0.6.12 validate && npx --yes hyperframes@0.6.12 inspect",
+    "render": "npx --yes hyperframes@0.6.12 render",
+    "publish": "npx --yes hyperframes@0.6.12 publish"
+  },
+  "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "playwright": "^1.60.0"
+  },
+  "dependencies": {
+    "butterchurn": "^2.6.7",
+    "butterchurn-presets": "^2.4.7",
+    "meyda": "^5.6.3",
+    "music-metadata": "^11.12.3",
+    "pixi.js": "^8.18.1",
+    "sharp": "^0.34.5",
+    "three": "^0.184.0",
+    "zod": "^4.4.3"
+  }
+}
