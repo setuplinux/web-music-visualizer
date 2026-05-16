@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Glowsticks Render</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+      }
+
+      canvas {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+
+      #reactive {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        pointer-events: none;
+      }
+
+      .status {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 2;
+        padding: 8px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.62);
+        color: #fff;
+        font: 12px/1.35 system-ui, sans-serif;
+      }
+
+      .meter {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 2;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .meter div {
+        width: 0%;
+        height: 100%;
+        background: linear-gradient(90deg, #00ffc8, #6cff00, #ffea00);
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="visualizer"></canvas>
+    <canvas id="reactive"></canvas>
+    <div id="status" class="status">Preparing glowsticks render...</div>
+    <div class="meter"><div id="level"></div></div>
+    <audio id="song" src="assets/signal-fires.wav" preload="auto" crossorigin="anonymous"></audio>
+
+    <script src="assets/vendor/butterchurn.min.js"></script>
+    <script src="assets/vendor/butterchurnPresets.min.js"></script>
+    <script src="assets/vendor/butterchurnPresetsExtra.min.js"></script>
+    <script>
+      const status = document.getElementById("status");
+      const level = document.getElementById("level");
+      const canvas = document.getElementById("visualizer");
+      const reactiveCanvas = document.getElementById("reactive");
+      const reactiveCtx = reactiveCanvas.getContext("2d");
+      const song = document.getElementById("song");
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const butter = window.butterchurn?.default || window.butterchurn;
+      const basePack = window.butterchurnPresets?.default || window.butterchurnPresets;
+      const extraPack = window.butterchurnPresetsExtra?.default || window.butterchurnPresetsExtra;
+      const presets = Object.assign({}, basePack.getPresets(), extraPack.getPresets());
+      const presetName = Object.keys(presets).find((name) => name.toLowerCase().includes("glowsticks v2 02"));
+
+      let visualizer;
+
+      function setStatus(message) {
+        status.textContent = message;
+      }
+
+      function resize() {
+        canvas.width = Math.floor(window.innerWidth * window.devicePixelRatio);
+        canvas.height = Math.floor(window.innerHeight * window.devicePixelRatio);
+        reactiveCanvas.width = canvas.width;
+        reactiveCanvas.height = canvas.height;
+        reactiveCanvas.style.width = `${window.innerWidth}px`;
+        reactiveCanvas.style.height = `${window.innerHeight}px`;
+        visualizer?.setRendererSize(canvas.width, canvas.height);
+      }
+
+      function drawReactiveOverlay({ rms, peak, bass, mid, treble, timeData, freqData }) {
+        const width = reactiveCanvas.width;
+        const height = reactiveCanvas.height;
+        const cx = width / 2;
+        const cy = height / 2;
+        const scale = Math.min(width, height);
+        reactiveCtx.clearRect(0, 0, width, height);
+        reactiveCtx.save();
+        reactiveCtx.globalCompositeOperation = "lighter";
+
+        const pulse = Math.min(1, rms * 3.2);
+        const bassPulse = Math.min(1, bass * 4.5);
+        const radius = scale * (0.13 + bassPulse * 0.13);
+        const glow = reactiveCtx.createRadialGradient(cx, cy, 0, cx, cy, radius * 1.7);
+        glow.addColorStop(0, `rgba(40, 255, 190, ${0.42 + bassPulse * 0.28})`);
+        glow.addColorStop(0.42, `rgba(0, 230, 255, ${0.16 + pulse * 0.14})`);
+        glow.addColorStop(1, "rgba(0, 0, 0, 0)");
+        reactiveCtx.fillStyle = glow;
+        reactiveCtx.beginPath();
+        reactiveCtx.arc(cx, cy, radius * 1.7, 0, Math.PI * 2);
+        reactiveCtx.fill();
+
+        reactiveCtx.lineWidth = Math.max(2, scale * 0.0045);
+        reactiveCtx.strokeStyle = `rgba(80, 255, 200, ${0.45 + pulse * 0.45})`;
+        reactiveCtx.beginPath();
+        for (let i = 0; i < timeData.length; i += 4) {
+          const theta = (i / timeData.length) * Math.PI * 2;
+          const sample = (timeData[i] - 128) / 128;
+          const r = scale * (0.25 + sample * 0.07 + bassPulse * 0.08);
+          const x = cx + Math.cos(theta) * r;
+          const y = cy + Math.sin(theta) * r;
+          if (i === 0) reactiveCtx.moveTo(x, y);
+          else reactiveCtx.lineTo(x, y);
+        }
+        reactiveCtx.closePath();
+        reactiveCtx.stroke();
+
+        const bars = 96;
+        const inner = scale * 0.33;
+        const maxBar = scale * 0.22;
+        reactiveCtx.lineWidth = Math.max(2, scale * 0.003);
+        for (let i = 0; i < bars; i++) {
+          const bin = Math.floor((i / bars) * Math.min(freqData.length, 512));
+          const value = freqData[bin] / 255;
+          const theta = (i / bars) * Math.PI * 2 - Math.PI / 2;
+          const length = maxBar * Math.pow(value, 1.45);
+          const hue = 150 + value * 80 + treble * 60;
+          reactiveCtx.strokeStyle = `hsla(${hue}, 100%, ${55 + value * 20}%, ${0.24 + value * 0.52})`;
+          reactiveCtx.beginPath();
+          reactiveCtx.moveTo(cx + Math.cos(theta) * inner, cy + Math.sin(theta) * inner);
+          reactiveCtx.lineTo(cx + Math.cos(theta) * (inner + length), cy + Math.sin(theta) * (inner + length));
+          reactiveCtx.stroke();
+        }
+
+        reactiveCtx.fillStyle = `rgba(255, 255, 255, ${0.05 + peak * 0.18})`;
+        reactiveCtx.fillRect(0, 0, width, height);
+        reactiveCtx.restore();
+      }
+
+      window.__renderGlowsticks = async ({ seconds = 10, startAt = 28, fps = 60, bitrate = 20000000, reactiveGain = 8, overlay = true } = {}) => {
+        if (!presetName) throw new Error("Glowsticks preset was not found.");
+
+        const audioContext = new AudioContextClass();
+        const destination = audioContext.createMediaStreamDestination();
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.62;
+        const analyserData = new Uint8Array(analyser.fftSize);
+        const analyserDataL = new Uint8Array(analyser.fftSize);
+        const analyserDataR = new Uint8Array(analyser.fftSize);
+        const freqData = new Uint8Array(analyser.frequencyBinCount);
+        const source = audioContext.createMediaElementSource(song);
+        const outputGain = audioContext.createGain();
+        outputGain.gain.value = 1;
+        const visualGain = audioContext.createGain();
+        visualGain.gain.value = reactiveGain;
+        source.connect(outputGain);
+        source.connect(visualGain);
+        outputGain.connect(destination);
+        visualGain.connect(analyser);
+        const silent = audioContext.createGain();
+        silent.gain.value = 0;
+        visualGain.connect(silent);
+        silent.connect(audioContext.destination);
+
+        visualizer = butter.createVisualizer(audioContext, canvas, {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          pixelRatio: 1,
+          textureRatio: 1,
+        });
+        resize();
+        visualizer.connectAudio(visualGain);
+        visualizer.loadPreset(presets[presetName], 0);
+
+        const compositeCanvas = document.createElement("canvas");
+        compositeCanvas.width = canvas.width;
+        compositeCanvas.height = canvas.height;
+        const compositeCtx = compositeCanvas.getContext("2d");
+        const canvasStream = compositeCanvas.captureStream(fps);
+        const mixedStream = new MediaStream([
+          ...canvasStream.getVideoTracks(),
+          ...destination.stream.getAudioTracks(),
+        ]);
+        const chunks = [];
+        const recorder = new MediaRecorder(mixedStream, {
+          mimeType: "video/webm;codecs=vp9,opus",
+          videoBitsPerSecond: bitrate,
+          audioBitsPerSecond: 192000,
+        });
+
+        recorder.addEventListener("dataavailable", (event) => {
+          if (event.data.size) chunks.push(event.data);
+        });
+
+        const finished = new Promise((resolve) => {
+          recorder.addEventListener("stop", async () => {
+            resolve(await new Blob(chunks, { type: "video/webm" }).arrayBuffer());
+          });
+        });
+
+        let frameCount = 0;
+        let levelSum = 0;
+        let levelPeak = 0;
+        let bassSum = 0;
+        let midSum = 0;
+        let trebleSum = 0;
+        let lastTime = performance.now();
+        let frameIntervals = [];
+        let resolveFrames;
+        const enoughFrames = new Promise((resolve) => {
+          resolveFrames = resolve;
+        });
+
+        function updateAudioLevel() {
+          analyser.getByteTimeDomainData(analyserData);
+          analyser.getByteFrequencyData(freqData);
+          analyserDataL.set(analyserData);
+          analyserDataR.set(analyserData);
+          let sum = 0;
+          for (const value of analyserData) {
+            const centered = (value - 128) / 128;
+            sum += centered * centered;
+          }
+          const rms = Math.sqrt(sum / analyserData.length);
+          const avgBand = (from, to) => {
+            let bandSum = 0;
+            let count = 0;
+            for (let i = from; i < to; i += 1) {
+              bandSum += freqData[i] / 255;
+              count += 1;
+            }
+            return bandSum / Math.max(1, count);
+          };
+          const bass = avgBand(1, 18);
+          const mid = avgBand(18, 110);
+          const treble = avgBand(110, 360);
+          levelSum += rms;
+          levelPeak = Math.max(levelPeak, rms);
+          bassSum += bass;
+          midSum += mid;
+          trebleSum += treble;
+          level.style.width = `${Math.min(100, Math.round(rms * 320))}%`;
+          return { rms, bass, mid, treble };
+        }
+
+        function frame(now) {
+          const audio = updateAudioLevel();
+          visualizer.render({
+            audioLevels: {
+              timeByteArray: analyserData,
+              timeByteArrayL: analyserDataL,
+              timeByteArrayR: analyserDataR,
+            },
+            elapsedTime: 1 / fps,
+          });
+          if (overlay) {
+            drawReactiveOverlay({
+              rms: audio.rms,
+              peak: levelPeak,
+              bass: audio.bass,
+              mid: audio.mid,
+              treble: audio.treble,
+              timeData: analyserData,
+              freqData,
+            });
+          } else {
+            reactiveCtx.clearRect(0, 0, reactiveCanvas.width, reactiveCanvas.height);
+          }
+          compositeCtx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+          compositeCtx.drawImage(canvas, 0, 0);
+          compositeCtx.drawImage(reactiveCanvas, 0, 0);
+          frameCount += 1;
+          frameIntervals.push(now - lastTime);
+          lastTime = now;
+          if (!recorder.__done) {
+            requestAnimationFrame(frame);
+          } else {
+            resolveFrames();
+          }
+        }
+
+        setStatus(`Recording ${presetName}`);
+        await audioContext.resume();
+        song.currentTime = startAt;
+        recorder.start(250);
+        await song.play();
+        requestAnimationFrame((now) => {
+          lastTime = now;
+          frame(now);
+        });
+        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+        recorder.__done = true;
+        await enoughFrames;
+        recorder.stop();
+        song.pause();
+        canvasStream.getTracks().forEach((track) => track.stop());
+        destination.stream.getTracks().forEach((track) => track.stop());
+        setStatus("Render complete");
+        const bytes = new Uint8Array(await finished);
+        let binary = "";
+        const chunkSize = 0x8000;
+        for (let index = 0; index < bytes.length; index += chunkSize) {
+          binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+        }
+        return {
+          presetName,
+          stats: {
+            frameCount,
+            averageFrameMs: frameIntervals.reduce((sum, value) => sum + value, 0) / Math.max(1, frameIntervals.length),
+            audioRmsAverage: levelSum / Math.max(1, frameCount),
+            audioRmsPeak: levelPeak,
+            bassAverage: bassSum / Math.max(1, frameCount),
+            midAverage: midSum / Math.max(1, frameCount),
+            trebleAverage: trebleSum / Math.max(1, frameCount),
+            reactiveGain,
+            overlay,
+            songTime: song.currentTime,
+          },
+          base64: btoa(binary),
+        };
+      };
+    </script>
+  </body>
+</html>
